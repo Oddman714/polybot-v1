@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════
-// POLYBOT — Railway Server v3
+// POLYBOT — Railway Server v4
 // Fixes: startDashboard crash, adds /state endpoint
 // ═══════════════════════════════════════════════════
 const express = require('express');
