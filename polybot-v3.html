@@ -1089,9 +1089,9 @@ function updateAn() {
   const copyWins    = S.railwayCopyWins || wins;
   const copyLosses  = S.railwayCopyLosses || losses;
 
-  // Best trade from local trade history
+  // Best trade — use Railway data if available
   const winTrades = S.trades.filter(t=>t.win===true);
-  const best = winTrades.length ? Math.max(...winTrades.map(t=>t.pnl||0)) : null;
+  const best = S.bestTrade !== undefined ? S.bestTrade : (winTrades.length ? Math.max(...winTrades.map(t=>t.pnl||0)) : null);
   const avg  = totalTrades > 0 ? (gross / totalTrades) : null;
 
   g('eq-val').textContent = '$' + Math.abs(gross).toFixed(2);
@@ -1108,6 +1108,7 @@ function updateAn() {
   g('a-net').style.color   = net >= 0 ? 'var(--g)' : 'var(--r)';
   g('a-best').textContent  = best !== null ? fmt(best) : '—';
   g('a-avg').textContent   = avg !== null ? '$' + Math.abs(avg).toFixed(4) : '—';
+  g('a-top').textContent   = S.topWallet || '—';
 
   // Win rate donut — use Railway win rate directly
   const wr = tot > 0 ? wins / tot : (S.railwayWinRate ? S.railwayWinRate / 100 : 0);
@@ -1173,8 +1174,10 @@ function drawHM() {
 function drawBars() {
   const r=ctx2('bar-cv'); if(!r) return;
   const {cx,W,H}=r; cx.clearRect(0,0,W,H);
-  const wins=S.trades.filter(t=>t.win), losses=S.trades.filter(t=>t.win===false);
-  const wv=wins.reduce((a,t)=>a+Math.abs(t.pnl),0), lv=losses.reduce((a,t)=>a+Math.abs(t.pnl),0);
+  const wins=S.trades.filter(t=>t.win===true), losses=S.trades.filter(t=>t.win===false);
+  // Use Railway volumes if available, otherwise local
+  const wv = S.profitVol !== undefined ? S.profitVol : wins.reduce((a,t)=>a+Math.abs(t.pnl||0),0);
+  const lv = S.lossVol  !== undefined ? S.lossVol  : losses.reduce((a,t)=>a+Math.abs(t.pnl||0),0);
   const mx=Math.max(wv,lv,.01), bw=W*.28, gap=W*.12, x1=(W-bw*2-gap)/2, x2=x1+bw+gap, pad=20;
   const drawBar=(x,h,col,lbl,val)=>{ const bh=Math.max(4,(h/mx)*(H-pad-8)), y=H-pad-bh; cx.beginPath(); if(cx.roundRect) cx.roundRect(x,y,bw,bh,4); else cx.rect(x,y,bw,bh); cx.fillStyle=col; cx.shadowBlur=12; cx.shadowColor=col; cx.fill(); cx.shadowBlur=0; cx.fillStyle='rgba(255,255,255,.4)'; cx.font='10px Outfit'; cx.textAlign='center'; cx.fillText(lbl,x+bw/2,H-5); cx.fillStyle='rgba(255,255,255,.9)'; cx.font='bold 12px Outfit'; cx.fillText('$'+Math.abs(val).toFixed(2),x+bw/2,y-6); };
   drawBar(x1,wv,'rgba(48,209,88,.75)','PROFIT',wv);
@@ -1359,6 +1362,46 @@ function ingestRailwayState(data, firstLoad) {
   // Bankroll accuracy
   if (data.bankroll !== undefined) S.bankroll = data.bankroll;
   if (data.peakBankroll !== undefined) S.peakBankroll = data.peakBankroll;
+
+  // Store Railway trade stats for analytics
+  if (data.recentTrades && data.recentTrades.length) {
+    // Merge into local trades array for chart rendering
+    var existing = new Set(S.trades.map(function(t){ return t.ts + '-' + t.market; }));
+    data.recentTrades.forEach(function(t) {
+      var key = t.ts + '-' + t.market;
+      if (!existing.has(key)) {
+        S.trades.push(t);
+        existing.add(key);
+      }
+    });
+    if (S.trades.length > 200) S.trades = S.trades.slice(-200);
+  }
+
+  // Calculate best trade from Railway data
+  var allWins = data.recentTrades ? data.recentTrades.filter(function(t){ return t.win === true; }) : [];
+  if (allWins.length) {
+    S.bestTrade = Math.max.apply(null, allWins.map(function(t){ return t.pnl || 0; }));
+  }
+
+  // Calculate profit/loss volumes from Railway data
+  if (data.recentTrades && data.recentTrades.length) {
+    S.profitVol = data.recentTrades.filter(function(t){ return t.win === true; })
+      .reduce(function(a, t){ return a + Math.abs(t.pnl || 0); }, 0);
+    S.lossVol = data.recentTrades.filter(function(t){ return t.win === false; })
+      .reduce(function(a, t){ return a + Math.abs(t.pnl || 0); }, 0);
+  }
+
+  // Top copied wallet
+  var copyTrades = data.recentTrades ? data.recentTrades.filter(function(t){ return t.type === 'copy' && t.detail; }) : [];
+  if (copyTrades.length) {
+    var walletCounts = {};
+    copyTrades.forEach(function(t) {
+      var match = t.detail.match(/0x[a-fA-F0-9]+/);
+      if (match) { walletCounts[match[0]] = (walletCounts[match[0]] || 0) + 1; }
+    });
+    var sorted = Object.entries(walletCounts).sort(function(a, b){ return b[1] - a[1]; });
+    S.topWallet = sorted.length ? sorted[0][0] : null;
+  }
 
   // Update UI
   g('d-pnl').textContent = fmt(S.pnl);
