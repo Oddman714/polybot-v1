@@ -1,0 +1,17 @@
+{
+  "name": "polybot",
+  "version": "9.3.0",
+  "description": "Polymarket automated trading bot with Claude AI signals",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "ws": "^8.13.0",
+    "@polymarket/clob-client": "^3.2.0",
+    "ethers": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
